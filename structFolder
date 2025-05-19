@@ -1,0 +1,24 @@
+k8s_hardener/
+├── __init__.py
+├── main.py          # CLI Entry Point
+├── utils/
+│   ├── rbac_hardener.py
+│   ├── pod_security_checker.py
+│   ├── network_policy_generator.py
+│   ├── kubelet_security_checker.py
+│   └── secret_encryption_checker.py
+├── istio_manager/
+│   ├── istio_installer.py          # Install Istio and enable sidecar injection
+│   ├── mtls_enforcer.py             # Enforce mTLS for all namespaces
+│   ├── policy_checker.py            # Check Istio policies (AuthorizationPolicies, PeerAuthentication)
+├── ids_monitor/
+│   ├── falco_installer.py           # Install and configure Falco
+│   ├── snort_deployer.py            # (Optional) Deploy Snort IDS
+│   ├── alert_watcher.py             # Watch IDS alerts and notify
+├── scanners/
+│   ├── image_scanner.py
+│   └── supply_chain_auditor.py
+├── backups/
+│   └── configuration_backuper.py
+├── requirements.txt
+└── README.md

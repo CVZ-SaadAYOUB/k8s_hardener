@@ -1,0 +1,25 @@
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+
+  name: dangerous-pod-exec-role
+rules:
+- apiGroups: [""] 
+  resources: ["pods/exec", "pods/attach"]
+  verbs: ["create"]
+
+--- # Separator 
+
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  
+  name: bind-default-sa-to-exec-role
+subjects:
+- kind: ServiceAccount
+  name: default 
+  namespace: default 
+roleRef:
+  kind: ClusterRole
+  name: dangerous-pod-exec-role 
+  apiGroup: rbac.authorization.k8s.io
