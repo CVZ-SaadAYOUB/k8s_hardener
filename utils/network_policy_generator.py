@@ -17,6 +17,12 @@ import questionary
 import subprocess # For running kubectl apply (alternative to client API)
 from typing import Dict, List, Any, Optional
 
+import logging # <--- ADDED THIS LINE
+
+# Configure logging <--- ADDED THESE LINES
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+
 console = Console()
 
 # --- Kubernetes Client Setup ---
