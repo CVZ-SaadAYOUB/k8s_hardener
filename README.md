@@ -1,5 +1,6 @@
 # K8sHardener Utility
-![Alt text](K8sHardenerLogo.svg)
+![K8sHardenerLogo](https://github.com/user-attachments/assets/71295e44-2a82-47d8-9634-a19fec8a742f)
+
 K8sHardener is a command-line utility designed to help you enhance the security posture of your Kubernetes clusters. It provides an interactive suite of tools for auditing, hardening, and managing various security aspects, from Role-Based Access Control (RBAC) and Pod Security to Istio service mesh configuration, intrusion detection with Falco, and container image security.
 
 ## Prerequisites
