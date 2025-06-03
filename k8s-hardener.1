@@ -1,0 +1,124 @@
+." Man page for k8s-hardener
+." Section 1: User Commands
+.TH K8S-HARDENER 1 "June 2025" "K8sHardener Utility" "User Manuals"
+
+.SH NAME
+k8s-hardener \- Kubernetes security hardening and auditing utility
+
+.SH SYNOPSIS
+.B k8s-hardener
+[\fIOPTIONS\fR]
+
+.SH DESCRIPTION
+.B k8s-hardener
+is an interactive command-line utility designed to enhance the security posture of Kubernetes clusters. It provides a suite of tools for auditing, hardening, and managing various security aspects including RBAC, Pod Security, Istio service mesh configuration, intrusion detection with Falco, and container image security.
+
+The utility guides users through different modules and actions with clear prompts. It also supports specific commands for MicroK8s environments where applicable.
+
+Upon launch, the utility prompts for an output directory where all generated files (reports, YAMLs, backups) will be saved.
+
+.SH OPTIONS
+The utility is primarily interactive, but the main script (`main.py`) can accept the following arguments when invoked:
+.TP
+.B \-\-dry-run
+Perform a dry run for applicable actions (e.g., RBAC hardening). The utility will show what changes would be made without actually applying them.
+.TP
+.B \-n, \-\-namespace
+.I namespace_name
+Specify a namespace for operations that are namespace-specific (e.g., Falco alert watcher).
+.TP
+.B \-s, \-\-since
+.I duration
+Show logs since a relative duration for the alert watcher (e.g., \fB5m\fR, \fB1h\fR, \fB10s\fR).
+
+.SH MODULES
+.B k8s-hardener
+is organized into the following main modules, accessible via an interactive menu:
+
+.SS 1. General Kubernetes Hardening
+.TP
+.B RBAC Management
+Audits RBAC configurations, interactively hardens risky setups, and generates new RBAC resources.
+.TP
+.B Pod Security Checker
+Scans running pods for common security misconfigurations (privileged, host namespaces, capabilities, etc.), reports findings, and can prompt to delete risky pods.
+.TP
+.B Network Policy Generator
+Interactively creates Kubernetes NetworkPolicy YAML manifests to control traffic flow.
+
+.SS 2. Istio and Zero Trust
+.TP
+.B Istio Installation Manager
+Manages Istio installation (generic K8s & MicroK8s), uninstallation, and sidecar injection.
+.TP
+.B mTLS Enforcement Manager
+Manages mesh-wide mTLS enforcement (STRICT, PERMISSIVE, UNSET) using PeerAuthentication policies.
+.TP
+.B Istio Policy Checker
+Audits Istio AuthorizationPolicy and PeerAuthentication resources for misconfigurations.
+
+.SS 3. Intrusion Detection
+.TP
+.B Falco Installer
+Installs Falco using Helm, with an option to install Helm if not found.
+.TP
+.B Alert Watcher
+Streams and displays Falco alerts from Falco pods.
+
+.SS 4. Image & Supply Chain
+.TP
+.B Image Scanner
+Scans container images for vulnerabilities using Trivy.
+.TP
+.B Supply Chain Auditor
+Audits images for SBOMs (with Trivy) and signatures (with Cosign).
+.TP
+.B Deployment YAML Checker
+Scans local Kubernetes Deployment YAML files for misconfigurations before application.
+
+.SS 5. Configuration Backups
+.TP
+.B Configuration Backuper
+Backs up configurations of common Kubernetes resources as YAML files.
+
+.SH PREREQUISITES
+.IP \(bu 2
+Python 3.6+ and Pip.
+.IP \(bu 2
+Kubernetes cluster access (`kubectl` or `microk8s.kubectl`).
+.IP \(bu 2
+Python dependencies installed via `pip install -r requirements.txt`.
+.IP \(bu 2
+External tools for specific modules: Helm, Trivy, Cosign, curl, bash.
+
+.SH INSTALLATION AS CLI COMMAND
+1. Ensure `k8s_hardener/main.py` has `#!/usr/bin/env python3` as its first line and is executable (`chmod +x k8s_hardener/main.py`).
+2. Create a wrapper script (e.g., in `/usr/local/bin/k8s-hardener`):
+.RS
+.nf
+#!/bin/bash
+MAIN_SCRIPT_PATH="/full/path/to/your/k8s_hardener/main.py"
+"$MAIN_SCRIPT_PATH" "$@"
+.fi
+.RE
+3. Replace `/full/path/to/your/k8s_hardener/main.py` with the actual absolute path.
+4. Make the wrapper script executable (`sudo chmod +x /usr/local/bin/k8s-hardener`).
+
+.SH FILES
+.TP
+.B requirements.txt
+Lists Python dependencies.
+
+.SH SEE ALSO
+.BR kubectl (1),
+.BR helm (1),
+.BR trivy (1),
+.BR cosign (1),
+.BR falco (8)
+
+.SH BUGS
+Report bugs to the project maintainer.
+
+.SH AUTHOR
+K8sHardener Utility (Based on user-provided code provided to an AI)
+

@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # ASCII banner generation
 from pyfiglet import Figlet
 
