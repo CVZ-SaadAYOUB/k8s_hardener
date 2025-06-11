@@ -20,6 +20,8 @@ import questionary # For more complex prompts if needed, and for consistency
 try:
     from kubernetes import client, config
     from kubernetes.client.rest import ApiException
+    # This import is for the table in the status check
+    from rich.table import Table
     K8S_CLIENT_LOADED = True
 except ImportError:
     K8S_CLIENT_LOADED = False
@@ -38,7 +40,12 @@ HELM_INSTALL_SCRIPT_NAME = "get_helm.sh"
 def _command_exists(command: str) -> bool:
     """Checks if a command exists on the system."""
     try:
-        subprocess.run([command, '--version'], capture_output=True, text=True, check=True)
+        if command == 'helm':
+            args = ['version']
+        else:
+            args = ['--version']
+        
+        subprocess.run([command] + args, capture_output=True, text=True, check=True)
         return True
     except (subprocess.CalledProcessError, FileNotFoundError):
         return False
@@ -79,9 +86,7 @@ def _install_helm_via_script() -> bool:
         console.print(f"Running ./{HELM_INSTALL_SCRIPT_NAME} to install Helm...")
         console.print("[italic]You might be prompted for your sudo password if the script needs to write to protected directories.[/italic]")
         
-        # Run the script. It might be interactive or require sudo.
-        # We don't capture output here to allow for interactivity (like sudo prompt).
-        install_process = subprocess.run([f'./{HELM_INSTALL_SCRIPT_NAME}'], check=False) # check=False to handle non-zero if user cancels sudo etc.
+        install_process = subprocess.run([f'./{HELM_INSTALL_SCRIPT_NAME}'], check=False)
         
         if install_process.returncode != 0:
             console.print(f"[bold red]Helm installation script finished with an error (code {install_process.returncode}).[/bold red]")
@@ -91,7 +96,6 @@ def _install_helm_via_script() -> bool:
         console.print("[green]Helm installation script executed.[/green]")
         console.print("Verifying Helm installation...")
         
-        # Re-check if helm command works
         if _command_exists("helm"):
             result = subprocess.run(['helm', 'version'], capture_output=True, text=True)
             console.print(f"[green]Helm successfully installed and verified: {result.stdout.strip()}[/green]")
@@ -127,11 +131,9 @@ def _prompt_and_install_helm() -> bool:
         border_style="yellow"
     ))
 
-    # Use questionary.confirm for better control over prompt and default behavior
-    # Affirmative if user types 'y', 'yes' (case-insensitive) or just hits Enter (if default=True)
     install_choice = questionary.confirm(
         "Do you want to attempt to install Helm automatically using the official script (get.helm.sh)?",
-        default=True # Pressing Enter will mean 'yes'
+        default=True
     ).ask()
 
     if install_choice:
@@ -155,13 +157,12 @@ def _add_update_falco_repo() -> bool:
     """Adds the Falco Helm repository and updates it."""
     try:
         console.print(f"Checking for Helm repository '{FALCO_HELM_REPO_NAME}'...")
-        # Ensure Helm is actually installed before running repo commands
         if not _command_exists("helm"):
              console.print("[red]Cannot manage Helm repositories because Helm command is not available.[/red]")
              return False
 
         repo_list_result = subprocess.run(['helm', 'repo', 'list', '-o', 'json'], capture_output=True, text=True, check=True)
-        repo_list = json.loads(repo_list_result.stdout) # Ensure json is imported
+        repo_list = json.loads(repo_list_result.stdout)
         repo_exists = any(repo['name'] == FALCO_HELM_REPO_NAME and repo['url'] == FALCO_HELM_REPO_URL for repo in repo_list)
 
         if not repo_exists:
@@ -195,11 +196,9 @@ def _get_installation_options() -> Dict[str, any]:
         "Enter the namespace for Falco installation (will be created if it doesn't exist):",
         default="falco"
     ).ask()
-    if not options["namespace"]: # Should be caught by questionary if required=True
+    if not options["namespace"]:
         console.print("[red]Namespace cannot be empty. Exiting.[/red]")
         sys.exit(1)
-
-    # create_namespace is handled by helm --create-namespace flag
 
     console.print("\nFalco Driver Configuration:")
     options["driver_kind"] = questionary.select(
@@ -208,10 +207,8 @@ def _get_installation_options() -> Dict[str, any]:
             {"name": "eBPF probe (modern kernels, default)", "value": "ebpf"},
             {"name": "Kernel module (legacy)", "value": "module"},
             {"name": "Userspace instrumentation (modern_ebpf, specific environments)", "value": "modern_ebpf"}
-        ],
-        default="ebpf" # Default value for questionary select
+        ]
     ).ask()
-
 
     console.print("\nFalco Event Sources:")
     options["audit_log_enabled"] = questionary.confirm(
@@ -228,15 +225,26 @@ def _get_installation_options() -> Dict[str, any]:
     options["log_level"] = questionary.select(
         "Set Falco log level:",
         choices=["critical", "error", "warning", "notice", "info", "debug"],
-        default="info" # Default value for questionary select
+        default="info"
     ).ask()
+    
+    console.print("\nFalco Resource Configuration:")
+    options["set_resources"] = questionary.confirm(
+        "Set custom resource requests and limits for Falco? (Recommended for resource-constrained environments)",
+        default=True
+    ).ask()
+
+    if options.get("set_resources"):
+        console.print(Text("Enter values in Kubernetes format (e.g., CPU: '100m', Memory: '256Mi').", style="dim"))
+        options["cpu_request"] = questionary.text("Enter CPU request:", default="100m").ask()
+        options["mem_request"] = questionary.text("Enter Memory request:", default="256Mi").ask()
+        options["cpu_limit"] = questionary.text("Enter CPU limit:", default="500m").ask()
+        options["mem_limit"] = questionary.text("Enter Memory limit:", default="512Mi").ask()
 
     console.print(Panel(
         Text.from_markup(
-            "For advanced configuration, including custom rules, resource limits, or specific driver parameters, "
-            "you may need to provide a custom values.yaml file to Helm or use more specific `--set` flags.\n"
-            "Refer to the official Falco Helm chart documentation: "
-            "https://github.com/falcosecurity/charts/tree/master/falco"
+            "For advanced configuration, including custom rules, you may need to provide a custom values.yaml file to Helm.\n"
+            "Refer to the official Falco Helm chart documentation for all available options."
         ),
         title="[dim]Advanced Configuration Note[/dim]",
         border_style="dim"
@@ -251,12 +259,10 @@ def _check_falco_pods_status(namespace: str, release_name: str):
         return
 
     try:
-        # Attempt to load kube_config if not already loaded (e.g. if not in-cluster)
         try:
             config.load_kube_config()
         except config.ConfigException:
-             # If load_kube_config fails, it might be because in-cluster is already loaded or no config exists
-            pass # Proceed, as CoreV1Api() might still work if in-cluster config was loaded earlier
+            pass
 
         v1 = client.CoreV1Api()
         console.print(f"\nChecking status of Falco pods in namespace '{namespace}' (release: '{release_name}')...")
@@ -293,15 +299,12 @@ def run_falco_installer():
     """Main function to drive Falco installation."""
     console.rule("[bold green]Kubernetes Falco Installer[/bold green]", style="green")
 
-    if not _check_helm_installed(): # This function already prints messages about Helm not being found or user declining.
-        # Simply return to main.py instead of exiting the whole program.
-        # main.py will then re-display the IDS menu.
-        return # <--- MODIFIED LINE
+    if not _check_helm_installed():
+        return
 
     if not _add_update_falco_repo():
         console.print("[red]Failed to set up Falco Helm repository. Cannot proceed with Falco installation.[/red]")
-        # We should also return here if the repo setup fails, to go back to the menu.
-        return # <--- ADDED RETURN FOR CONSISTENCY
+        return
 
     install_options = _get_installation_options()
     namespace = install_options["namespace"]
@@ -317,20 +320,32 @@ def run_falco_installer():
         helm_cmd.extend(['--set', 'driver.loader.modernEbpf.enabled=true'])
 
     helm_cmd.extend(['--set', f'auditLog.enabled={str(install_options["audit_log_enabled"]).lower()}'])
-    helm_cmd.extend(['--set', f'falco.jsonOutput={str(install_options["json_output"]).lower()}'])
+    
+    # FIXED: Use the correct key `json_output` instead of `jsonOutput`
+    helm_cmd.extend(['--set', f'falco.json_output={str(install_options["json_output"]).lower()}'])
+    
     helm_cmd.extend(['--set', f'falco.logLevel={install_options["log_level"]}'])
+    
+    if install_options.get("set_resources"):
+        if install_options.get("cpu_request"):
+            helm_cmd.extend(['--set', f'falco.resources.requests.cpu={install_options["cpu_request"]}'])
+        if install_options.get("mem_request"):
+            helm_cmd.extend(['--set', f'falco.resources.requests.memory={install_options["mem_request"]}'])
+        if install_options.get("cpu_limit"):
+            helm_cmd.extend(['--set', f'falco.resources.limits.cpu={install_options["cpu_limit"]}'])
+        if install_options.get("mem_limit"):
+            helm_cmd.extend(['--set', f'falco.resources.limits.memory={install_options["mem_limit"]}'])
 
     console.print("\n[bold]Prepared Helm command:[/bold]")
     console.print(f"  {' '.join(helm_cmd)}")
 
-    # Use questionary.confirm for this prompt as well for consistency
     confirm_helm_install = questionary.confirm("\nProceed with Falco installation using the command above?", default=True).ask()
-    if confirm_helm_install is None: # Handle Ctrl+C during confirmation
+    if confirm_helm_install is None:
         console.print("Falco installation aborted by user.")
         return
     if not confirm_helm_install:
         console.print("Falco installation aborted by user.")
-        return # Return to menu if user aborts here
+        return
 
     console.print(f"\nInstalling Falco '{HELM_RELEASE_NAME}' into namespace '{namespace}'...")
     try:
@@ -352,11 +367,9 @@ def run_falco_installer():
                                  f"Stderr:\n{process.stderr.strip()}"),
                 title="[bold red]Helm Error[/bold red]", border_style="red"
             ))
-            # Do not exit here either, let it return to the menu
             return
     except Exception as e:
         console.print(f"[bold red]An unexpected error occurred during Helm execution: {e}[/bold red]")
-        # Do not exit here either
         return
 
     console.print("\n[bold green]Falco installation process complete.[/bold green]")
@@ -365,7 +378,7 @@ def run_falco_installer():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Install Falco on Kubernetes using Helm.")
-    args = parser.parse_args() # No specific args for now, but good to have parser
+    args = parser.parse_args()
 
     try:
         run_falco_installer()
