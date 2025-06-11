@@ -8,6 +8,7 @@ from rich.console import Console
 # Import all hardening modules from subfolders
 from utils import (
     rbac_hardener,
+    rbac_auditor, # Added import for the auditor
     # kubelet_security_checker, # Removed
     pod_security_checker,
     network_policy_generator,
@@ -39,6 +40,7 @@ import questionary
 import sys
 import argparse
 import os # Added for os.makedirs and os.path.exists
+from datetime import datetime # Added for timestamping output files
 
 # Global console instance for rich printing
 console = Console()
@@ -102,7 +104,7 @@ def utils_menu():
             "⬅ Back to Main Menu"
         ]).ask()
 
-# Submenu for RBAC operations
+# ADDED: Submenu for RBAC operations to meet the new requirement
 def rbac_management_menu():
     return questionary.select(
         "RBAC Management - Choose an action:",
@@ -120,7 +122,7 @@ def istio_menu():
         choices=[
             "Istio Installation Manager",
             "mTLS Enforcement Manager",
-            "Istio Policy Checker",
+            "Istio Policy Checker (coming soon)",
             "⬅ Back to Main Menu"
         ]).ask()
 
@@ -165,8 +167,8 @@ def scanners_menu():
     return questionary.select(
         "Scanners - Choose a function:",
         choices=[
-            "Image Scanner",
-            "Supply Chain Auditor",
+            "Image Scanner ",
+            "Supply Chain Auditor (coming soon)",
             "Deployment YAML Checker",
             "⬅ Back to Main Menu"
         ]).ask()
@@ -182,7 +184,7 @@ def backups_menu():
 
 # Handles routing of the selected menu item to the proper function
 def route_menu(args): # args will now have args.output_dir
-    rbac_tool = rbac_hardener.RBACHardener() 
+    # Tool instantiation moved into the menu logic where needed
     istio_installation_tool = IstioInstaller()
     mtls_enforcement_tool = MtlsEnforcer()
 
@@ -203,41 +205,40 @@ def route_menu(args): # args will now have args.output_dir
                 if sub is None: break
 
                 if sub == "RBAC Management":
+                    # FIXED: This block now handles the new RBAC sub-menu.
                     while True:
                         rbac_action = rbac_management_menu()
-                        if rbac_action is None: break
-
-                        if rbac_action == "Audit RBAC":
-                            console.print("▶ Running RBAC Audit...")
-                            audit_findings = rbac_tool.audit_rbac()
-                            if audit_findings:
-                                exclude_system_for_rbac = questionary.confirm(
-                                    "Exclude findings related to known system components from audit output?"
-                                ).ask()
-                                if exclude_system_for_rbac is None: continue
-                                rbac_tool.print_audit_findings(audit_findings, exclude_system=exclude_system_for_rbac)
-                        elif rbac_action == "Harden RBAC":
-                            console.print("▶ Running RBAC Hardener...")
-                            audit_findings = rbac_tool.audit_rbac()
-                            if audit_findings and not (len(audit_findings) == 1 and "error" in audit_findings[0] and audit_findings[0].get("severity") == "Error"):
-                                exclude_system_for_rbac = questionary.confirm(
-                                    "Exclude findings related to known system components from hardening?"
-                                ).ask()
-                                if exclude_system_for_rbac is None: continue
-                                proposed_changes = rbac_tool.interactive_hardening(audit_findings, exclude_system=exclude_system_for_rbac)
-                                if proposed_changes:
-                                    hardening_yaml = rbac_tool.generate_hardening_yaml(proposed_changes)
-                                    if hardening_yaml:
-                                        rbac_tool.apply_hardening_changes(hardening_yaml, dry_run=args.dry_run) 
-                                else:
-                                    console.print("[blue]No changes proposed during interactive hardening.[/blue]")
-                            elif audit_findings and len(audit_findings) == 1 and "error" in audit_findings[0]:
-                                console.print("[bold red]Cannot proceed with hardening due to audit errors.[/bold red]")
-                        elif rbac_action == "Generate RBAC":
-                            console.print("▶ Running RBAC Generator...")
-                            rbac_tool.generate_rbac_interactive() 
-                        elif rbac_action == "⬅ Back to General Kubernetes Hardening":
+                        if rbac_action is None or rbac_action.startswith("⬅"):
                             break
+
+                        if rbac_action.startswith("Audit RBAC"):
+                            console.print("▶ Running RBAC Auditor (Read-only)...")
+                            auditor = rbac_auditor.RBACAuditor()
+                            if not auditor.core_api or not auditor.rbac_api:
+                                console.print("[bold red]Failed to connect to Kubernetes API. Aborting audit.[/bold red]")
+                                continue
+                            
+                            exclude_system = questionary.confirm(
+                                "Exclude findings related to known system components (e.g., Calico, CoreDNS)?",
+                                default=True
+                            ).ask()
+                            if exclude_system is None: continue
+
+                            findings = auditor.audit_rbac()
+                            auditor.print_audit_findings(findings, exclude_system=exclude_system)
+
+                        elif rbac_action.startswith("Harden RBAC"):
+                            console.print("▶ Initializing RBAC Hardener (Audit & Fix)...")
+                            hardener = rbac_hardener.RBACHardener(
+                                namespace_filter=args.namespace,
+                                output_file=os.path.join(args.output_dir, f"rbac_hardening_{datetime.now().strftime('%Y%m%d_%H%M%S')}.yaml")
+                            )
+                            hardener.run()
+                        
+                        elif rbac_action.startswith("Generate RBAC"):
+                            console.print("[bold yellow]This feature is not yet implemented.[/bold yellow]")
+                            console.print("The current tool can audit and modify existing roles, but not generate new ones from scratch.")
+                        
                 elif sub.startswith("Pod Security Checker"):
                     console.print("▶ Running Pod Security Checker...")
                     pod_security_checker.run() 
